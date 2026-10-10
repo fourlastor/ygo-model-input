@@ -1,0 +1,11 @@
+[package]
+name = "ygo-model-input"
+description = "A Yu-Gi-Oh! duel decision as the arrays a neural policy reads"
+edition = "2021"
+version = "0.1.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1"
