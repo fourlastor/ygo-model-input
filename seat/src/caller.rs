@@ -19,7 +19,7 @@ use ygo_policies::model::{Decision, Observation};
 use ygo_policies_ocgcore::message::is_selection;
 use ygo_policies_ocgcore::wire::msg;
 
-use crate::trail::{standing, Trail};
+use crate::trail::Trail;
 use crate::view::{self, View};
 use crate::Options;
 
@@ -95,7 +95,7 @@ impl<A: FnMut(View) -> Option<usize> + Send> Caller<A> {
 
 impl<A: FnMut(View) -> Option<usize> + Send> Policy for Caller<A> {
     fn choose(&mut self, observation: &Observation, decision: &Decision) -> usize {
-        let standing = standing(decision, &self.options);
+        let standing = self.progress.shared().trail.offered(observation, decision, &self.options);
         let label = self.pilot.choose(observation, decision).min(decision.choices.len() - 1);
         let mut choice = if standing.placement { label } else { standing.open.first().copied().unwrap_or(0) };
         // Nothing is held while the caller is asked: it may look at the
