@@ -10,7 +10,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 
-use ygo_policies::model::{Choice, Decision, DecisionKind, Member, Observation};
+use ygo_policies::model::{Choice, ChoiceKind, Decision, DecisionKind, Member, Observation};
 
 use crate::Options;
 use crate::view::{self, Past, View};
@@ -103,31 +103,36 @@ impl Trail {
     }
 
     /// What a network that decides for the seat is offered of `decision`:
-    /// the choices of [`standing`], but for a command the seat gave at the
-    /// same position earlier in the turn.  The duel came back to where that
-    /// command was given, so it changed nothing; offered again, a network
-    /// that takes its first choice gives it again, and the duel goes round
-    /// until its cap of decisions ends it.  Lyla, Lightsworn Sorceress did
-    /// so under Skill Drain, which negates her effect but lets her activate
-    /// it again: she turns to Defense Position only if it resolves.  Only a
-    /// command of the Main or the Battle Phase is taken away: the seat is
-    /// asked at chain windows that look alike while the duel goes on around
-    /// it, and passing one is never what brings it back.  Where every
-    /// command was given there already, all of them stay.
+    /// the choices of [`standing`], but for a command or an activation the
+    /// seat gave at the same position earlier in the turn.  The duel came
+    /// back to where it was given, so it changed nothing; offered again, a
+    /// network that takes its first choice gives it again, and the duel goes
+    /// round until its cap of decisions ends it.  Lyla, Lightsworn Sorceress
+    /// did so under Skill Drain, which negates her effect but lets her
+    /// activate it again: she turns to Defense Position only if it resolves.
+    /// She did it from a command of the Main Phase, and from a chain window
+    /// of it, where the seat activated her and was asked the same window
+    /// again.  Passing a chain window is never what brings the seat back,
+    /// and it is always offered; where every command or activation was given
+    /// there already, all of them stay.
     pub fn offered(&mut self, observation: &Observation, decision: &Decision, options: &Options) -> Standing {
         let mut standing = standing(decision, options);
         if observation.turn != self.turn {
             self.given.clear();
             self.turn = observation.turn;
         }
-        if !matches!(decision.kind, DecisionKind::Idle | DecisionKind::Battle) {
+        let window = matches!(decision.kind, DecisionKind::Chain { .. });
+        let command = matches!(decision.kind, DecisionKind::Idle | DecisionKind::Battle);
+        // A window with one answer has nothing to take away.
+        if !(command || (window && standing.open.len() > 1)) {
             self.position = None;
             return standing;
         }
         let here = position(observation, decision);
         self.position = Some(here);
         if let Some(given) = self.given.get(&here) {
-            let left: Vec<usize> = standing.open.iter().copied().filter(|index| !given.contains(index)).collect();
+            let kept = |index: &usize| !given.contains(index) || matches!(decision.choices[*index].kind, ChoiceKind::Pass);
+            let left: Vec<usize> = standing.open.iter().copied().filter(kept).collect();
             if !left.is_empty() && left.len() < standing.open.len() {
                 standing.real = if options.skip_single { left.len() > 1 } else { !left.is_empty() };
                 standing.open = left;
@@ -249,16 +254,50 @@ mod tests {
         assert_eq!(trail.offered(&here, &decision, &options).open, vec![1, 2]);
     }
 
+    /// A chain window: activate one of two cards, or pass.
+    fn chain_window(forced: bool) -> Decision {
+        let choice = |kind| Choice { kind, card: None, members: vec![], description: 0, place: None };
+        let mut choices = vec![choice(ChoiceKind::Activate), choice(ChoiceKind::Activate)];
+        if !forced {
+            choices.push(choice(ChoiceKind::Pass));
+        }
+        Decision { kind: DecisionKind::Chain { forced, triggers: false }, choices, ..main_phase() }
+    }
+
     #[test]
-    fn a_chain_window_that_looks_alike_is_answered_as_ever() {
+    fn an_activation_at_a_chain_window_that_changed_nothing_is_not_offered_there_again() {
         let options = Options::default();
         let mut trail = Trail::default();
-        let mut window = main_phase();
-        window.kind = DecisionKind::Chain { forced: false, triggers: false };
+        let window = chain_window(false);
+        let here = observation(3, 8000);
+        assert_eq!(trail.offered(&here, &window, &options).open, vec![0, 1, 2]);
+        trail.note(&window, 0);
+        // Back at the same window: the activation is not offered there.
+        assert_eq!(trail.offered(&here, &window, &options).open, vec![1, 2]);
+        trail.note(&window, 1);
+        // Both activations given there: passing alone, taken as a single answer is.
+        let last = trail.offered(&here, &window, &options);
+        assert_eq!(last.open, vec![2]);
+        assert!(!last.real);
+        // Passing never brings the seat back: it stays, however often it was given.
+        trail.note(&window, 2);
+        assert_eq!(trail.offered(&here, &window, &options).open, vec![2]);
+        // Where the activation changed something, everything is offered.
+        assert_eq!(trail.offered(&observation(3, 7000), &window, &options).open, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn a_window_that_must_be_answered_keeps_its_activations() {
+        let options = Options::default();
+        let mut trail = Trail::default();
+        let window = chain_window(true);
         let here = observation(3, 8000);
         trail.offered(&here, &window, &options);
-        trail.note(&window, 2);
-        assert_eq!(trail.offered(&here, &window, &options).open, vec![0, 1, 2]);
+        trail.note(&window, 0);
+        assert_eq!(trail.offered(&here, &window, &options).open, vec![1]);
+        trail.note(&window, 1);
+        // Every activation given there already: all of them stay.
+        assert_eq!(trail.offered(&here, &window, &options).open, vec![0, 1]);
     }
 
     #[test]

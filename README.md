@@ -19,9 +19,10 @@ Two crates, in the order a decision goes through them:
     network is not asked is answered as in training: the deck's pilot
     chooses the zone a card goes to, and a decision with a single answer
     takes it. Shuffling the hand and cancelling a selection are never
-    offered, nor is a command of the Main or the Battle Phase that the seat
-    gave at the same position earlier in the turn, which brought it back
-    there.
+    offered, nor is a command of the Main or the Battle Phase, or an
+    activation at a chain window, that the seat gave at the same position
+    earlier in the turn, which brought it back there. Passing a chain window
+    always is.
 - **`input/` (`ygo-model-input`)** turns a view into arrays.
   - `view`: the `View` itself.
   - `features`: what is printed on a card, from its row of the card database.
