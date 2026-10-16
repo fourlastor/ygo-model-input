@@ -1,14 +1,10 @@
 //! A decision as the arrays the policy reads, and batches of them.
 //!
-//! This is the trainer's own packing of a decision, written in Python
-//! (`pack_decision` and `batch_many_packed` there), in Rust
-//! and number for number: the same arrays under the same names, with the
-//! same types and shapes, filled by the same arithmetic in the same order.
-//! The Python stays the reference: the trainer's tests hold the two
-//! together on real duels, and `tests/vectors.rs` holds this crate to what
-//! the reference gave for the decisions of `vectors/`.  Like the reference,
-//! this adds printed card data and scales numbers; it decides nothing about
-//! what a seat may see.
+//! The model's input, defined here: the trainer builds every array its
+//! network reads with this, and so does whatever else seats a checkpoint.
+//! `tests/vectors.rs` holds it to what it made of the decisions of
+//! `vectors/` when the input last changed on purpose.  It adds printed card
+//! data and scales numbers; it decides nothing about what a seat may see.
 
 use std::sync::Arc;
 
@@ -52,7 +48,8 @@ fn flag(on: bool) -> f32 {
     }
 }
 
-/// `min(value, most) / most`, as Python computes it.
+/// `min(value, most) / most`, worked out in 64 bits and kept in 32, as the
+/// input was first written (in Python).
 fn capped(value: u64, most: u64) -> f32 {
     (value.min(most) as f64 / most as f64) as f32
 }
@@ -264,7 +261,7 @@ impl Cards {
     }
 }
 
-/// One decision: its arrays by name, in the order Python gives them.
+/// One decision: its arrays by name, in a fixed order.
 #[derive(Clone, Debug, Default)]
 pub struct Packed {
     pub arrays: Vec<(String, Arc<Array>)>,

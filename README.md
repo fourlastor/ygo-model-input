@@ -2,9 +2,9 @@
 
 A Yu-Gi-Oh! duel decision as a neural policy's input: what a seat of
 [ygo-policies](https://github.com/fourlastor/ygo-policies) is asked, as the
-arrays a network reads. It is shared by the trainer that defines the input
-and by whatever else seats a trained checkpoint, so that a network is shown
-at a table what it was shown when it was trained.
+arrays a network reads. It is the one definition of that input, shared by the
+trainer and by whatever else seats a trained checkpoint, so that a network is
+shown at a table what it was shown when it was trained.
 
 Two crates, in the order a decision goes through them:
 
@@ -109,11 +109,11 @@ not trained on.
 
 ## Changing it
 
-The reference is the trainer's own packing of a decision, in Python, which
-is not in this repository. `input/vectors/decisions.json` holds what it
-makes of some 130 decisions, and `input/tests/vectors.rs` holds `pack` to
-that, array for array; the trainer's own tests hold both crates to the
-reference on real duels. A change of the input is made in the trainer's
-Python and here together, with the vectors written again
-(`tools/model_input_vectors.py` there), and a network trained before the
-change needs the revision before it.
+The input is defined here: the trainer builds every array its network reads
+with these crates and has no packing of its own. `input/vectors/decisions.json`
+holds what they make of some 130 decisions of the trainer's duels, written by
+its `tools/model_input_vectors.py`, and `input/tests/vectors.rs` holds `pack`
+and `batch` to that, array for array, so that an input changed by mistake
+fails there (and in the trainer's tests). A change of the input is made here,
+with the vectors written again, and a network trained before the change needs
+the revision before it.

@@ -1,18 +1,19 @@
-//! The arrays held to the reference.
+//! The arrays held to what they were made.
 //!
-//! `vectors/decisions.json` is written by the trainer from its own packing
-//! of a decision, which is the reference: decisions of real duels and a few
-//! made by hand, each as a view, with the name, the type, the shape and a
-//! digest of the bytes of every array the reference makes of it, alone and
-//! with all the others in one batch.  What this crate makes of the same
-//! views is compared with it.
+//! `vectors/decisions.json` is written with this crate by the trainer's
+//! `tools/model_input_vectors.py`, when the input is changed on purpose:
+//! decisions of real duels and a few made by hand, each as a view, with the
+//! name, the type, the shape and a digest of the bytes of every array made
+//! of it, alone and with all the others in one batch.  What this crate
+//! makes of the same views now is compared with it: an input changed by
+//! mistake fails here.
 
 use serde::Deserialize;
 use ygo_model_input::features::Features;
 use ygo_model_input::pack::{batch, pack, Array, Data, Packed};
 use ygo_model_input::view::View;
 
-/// An array as the reference tells it: name, type, shape, digest.
+/// An array as the vectors tell it: name, type, shape, digest.
 type Told = (String, String, Vec<usize>, String);
 
 #[derive(Deserialize)]
@@ -65,7 +66,7 @@ impl Reference {
 }
 
 #[test]
-fn every_decision_gives_the_arrays_of_the_reference() {
+fn every_decision_gives_the_arrays_it_gave() {
     let reference = reference();
     assert!(reference.vectors.decisions.len() > 100);
     for (index, decision) in reference.vectors.decisions.iter().enumerate() {
@@ -79,7 +80,7 @@ fn every_decision_gives_the_arrays_of_the_reference() {
 }
 
 #[test]
-fn the_decisions_together_give_the_batch_of_the_reference() {
+fn the_decisions_together_give_the_batch_they_gave() {
     let reference = reference();
     let packed: Vec<Packed> =
         reference.vectors.decisions.iter().map(|decision| reference.packed(&decision.view)).collect();

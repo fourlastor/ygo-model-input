@@ -1,9 +1,7 @@
 //! Printed card data as the policy reads it.
 //!
 //! A card's row is made from the columns of the card database (EDOPro's
-//! `cards.cdb`) with the arithmetic of the trainer's own Python, number for
-//! number and in the same order.  The Python stays the reference; the
-//! trainer's tests hold the two together.
+//! `cards.cdb`), in a fixed order.
 
 use std::collections::HashMap;
 
