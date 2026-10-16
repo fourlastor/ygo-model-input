@@ -1,7 +1,7 @@
 //! A decision as the arrays the policy reads, and batches of them.
 //!
 //! This is the trainer's own packing of a decision, written in Python
-//! (`pack_decision`, `deck_arrays` and `batch_many_packed` there), in Rust
+//! (`pack_decision` and `batch_many_packed` there), in Rust
 //! and number for number: the same arrays under the same names, with the
 //! same types and shapes, filled by the same arithmetic in the same order.
 //! The Python stays the reference: the trainer's tests hold the two
@@ -18,8 +18,6 @@ use crate::Result;
 
 /// Cards a seat can be shown at once.
 pub const MAX_CARDS: usize = 160;
-/// A Main Deck and an Extra Deck.
-pub const MAX_DECK_CARDS: usize = 80;
 pub const MAX_HISTORY: usize = 32;
 pub const MAX_ACTION_MEMBERS: usize = 64;
 /// What is known of a card where it lies, beside its printed data.
@@ -266,36 +264,6 @@ impl Cards {
     }
 }
 
-/// A deck list as arrays: built once for a deck and shared by its decisions.
-#[derive(Clone, Debug)]
-pub struct DeckArrays {
-    card: Arc<Array>,
-    categories: Arc<Array>,
-    numeric: Arc<Array>,
-}
-
-impl DeckArrays {
-    /// `codes` are the Main Deck then the Extra Deck.
-    pub fn new(codes: &[u32], features: &Features) -> Result<DeckArrays> {
-        let codes = &codes[..codes.len().min(MAX_DECK_CARDS)];
-        if codes.is_empty() {
-            return Err("a deck list has at least one card".into());
-        }
-        let mut categories = Vec::with_capacity(codes.len() * CATEGORIES);
-        let mut numeric = Vec::with_capacity(codes.len() * NUMERIC);
-        for code in codes {
-            let printed = features.printed(*code);
-            categories.extend_from_slice(&printed.categories);
-            numeric.extend_from_slice(&printed.numeric);
-        }
-        Ok(DeckArrays {
-            card: Array::new(&[codes.len()], Data::I64(codes.iter().map(|code| i64::from(*code)).collect())),
-            categories: Array::new(&[codes.len(), CATEGORIES], Data::I64(categories)),
-            numeric: Array::new(&[codes.len(), NUMERIC], Data::F32(numeric)),
-        })
-    }
-}
-
 /// One decision: its arrays by name, in the order Python gives them.
 #[derive(Clone, Debug, Default)]
 pub struct Packed {
@@ -365,9 +333,8 @@ fn context(view: &View, cards: &[view::Card], features: &Features, into: &mut Ve
     into.push(("context_mask".to_owned(), Array::new(&[CONTEXT], Data::Bool(mask))));
 }
 
-/// The arrays of one decision of a duel between the decks `own` (the
-/// deciding seat's) and `other`.
-pub fn pack(view: &View, own: &DeckArrays, other: &DeckArrays, features: &Features) -> Result<Packed> {
+/// The arrays of one decision.
+pub fn pack(view: &View, features: &Features) -> Result<Packed> {
     let cards = &view.cards[..view.cards.len().min(MAX_CARDS)];
     let mut state = Cards::new(cards.len().max(1));
     for (row, card) in cards.iter().enumerate() {
@@ -470,12 +437,6 @@ pub fn pack(view: &View, own: &DeckArrays, other: &DeckArrays, features: &Featur
     state.named("state_", &[rows], &mut arrays);
     context(view, cards, features, &mut arrays);
     let mut put = |name: &str, array: Arc<Array>| arrays.push((name.to_owned(), array));
-    put("self_deck", own.card.clone());
-    put("self_deck_categories", own.categories.clone());
-    put("self_deck_numeric", own.numeric.clone());
-    put("opponent_deck", other.card.clone());
-    put("opponent_deck_categories", other.categories.clone());
-    put("opponent_deck_numeric", other.numeric.clone());
     put("phase", Array::scalar(i64::from(view.phase)));
     put("decision_kind", Array::scalar(i64::from(question.kind)));
     put("decision_hint", Array::scalar(i64::from(question.hint)));
@@ -504,7 +465,7 @@ pub struct Batch {
 
 /// The lists whose length differs from one decision to the next, by the
 /// start of the names of their arrays.
-const LISTS: [&str; 5] = ["state", "self_deck", "opponent_deck", "action", "history"];
+const LISTS: [&str; 3] = ["state", "action", "history"];
 
 /// Pad already packed decisions into one batch.
 pub fn batch(items: &[&Packed]) -> Result<Batch> {
@@ -524,13 +485,7 @@ pub fn batch(items: &[&Packed]) -> Result<Batch> {
         let place = first.place(name);
         items.iter().map(|item| item.at(place).shape[0]).max().unwrap_or(0)
     };
-    let widths = [
-        longest("state_card"),
-        longest("self_deck"),
-        longest("opponent_deck"),
-        longest("action_kind"),
-        longest("history_card"),
-    ];
+    let widths = [longest("state_card"), longest("action_kind"), longest("history_card")];
     let member = first.place("action_member_card");
     let members = items.iter().map(|item| item.at(member).shape[1]).max().unwrap_or(0);
 
@@ -549,7 +504,7 @@ pub fn batch(items: &[&Packed]) -> Result<Batch> {
     let padded_members = |place: usize| {
         let like = first.at(place);
         let stride = like.stride(2);
-        let actions = widths[3];
+        let actions = widths[1];
         let mut data = like.data.zeros(count * actions * members * stride);
         for (index, item) in items.iter().enumerate() {
             let value = item.at(place);
@@ -586,12 +541,8 @@ pub fn batch(items: &[&Packed]) -> Result<Batch> {
             })
             .collect())
     };
-    let lengths = |name: &str| {
-        let place = first.place(name);
-        one(items.iter().map(|item| item.at(place).shape[0] as i64).collect())
-    };
 
-    let actions = widths[3];
+    let actions = widths[1];
     let kinds = first.place("action_kind");
     let mut mask = vec![0u8; count * actions];
     for (index, item) in items.iter().enumerate() {
@@ -600,8 +551,6 @@ pub fn batch(items: &[&Packed]) -> Result<Batch> {
     }
     let mut arrays = vec![
         ("state_lengths".to_owned(), single("state_length")),
-        ("self_deck_lengths".to_owned(), lengths("self_deck")),
-        ("opponent_deck_lengths".to_owned(), lengths("opponent_deck")),
         ("history_lengths".to_owned(), single("history_length")),
         ("action_mask".to_owned(), Array { shape: vec![count, actions], data: Data::Bool(mask) }),
         ("phase".to_owned(), single("phase")),

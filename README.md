@@ -58,20 +58,17 @@ where it does.
 
 ```rust
 use ygo_model_input::features::Features;
-use ygo_model_input::pack::{batch, pack, DeckArrays};
+use ygo_model_input::pack::{batch, pack};
 use ygo_model_seat::{Caller, Options, Progress, View};
 use ygo_policies_ocgcore::Seat;
 
 // The rows of the card database's `datas` table:
 // id, type, atk, def, level, race, attribute, setcode.
 let features = Features::from_rows(rows);
-// Each player's Main Deck then Extra Deck, the seat's own and the other's.
-let own = DeckArrays::new(&own_cards, &features)?;
-let other = DeckArrays::new(&other_cards, &features)?;
 
 let progress = Progress::default();
 let policy = Caller::new(pilot, Options::default(), progress.clone(), move |view: View| {
-    let packed = pack(&view, &own, &other, &features).ok()?;
+    let packed = pack(&view, &features).ok()?;
     let arrays = batch(&[&packed]).ok()?;
     // The network: one score an answer, and the answer it takes is a place
     // among `view.choices`. Without an answer the pilot's stands in.
@@ -107,8 +104,6 @@ not trained on.
   locations, positions, phases, hints and kinds by (`seat/src/view.rs`) are
   what the network's embeddings are indexed by, and the arrays are its input
   layer.
-- Both deck lists. The input holds the other player's, which a table does
-  not tell.
 
 ## Changing it
 

@@ -7,11 +7,9 @@
 //! with all the others in one batch.  What this crate makes of the same
 //! views is compared with it.
 
-use std::collections::HashMap;
-
 use serde::Deserialize;
 use ygo_model_input::features::Features;
-use ygo_model_input::pack::{batch, pack, Array, Data, DeckArrays, Packed};
+use ygo_model_input::pack::{batch, pack, Array, Data, Packed};
 use ygo_model_input::view::View;
 
 /// An array as the reference tells it: name, type, shape, digest.
@@ -19,8 +17,6 @@ type Told = (String, String, Vec<usize>, String);
 
 #[derive(Deserialize)]
 struct Decision {
-    own: String,
-    other: String,
     view: View,
     arrays: Vec<Told>,
 }
@@ -28,7 +24,6 @@ struct Decision {
 #[derive(Deserialize)]
 struct Vectors {
     cards: Vec<[i64; 8]>,
-    decks: HashMap<String, Vec<u32>>,
     decisions: Vec<Decision>,
     batch: Vec<Told>,
 }
@@ -53,7 +48,6 @@ fn told(name: &str, array: &Array) -> Told {
 struct Reference {
     vectors: Vectors,
     features: Features,
-    decks: HashMap<String, DeckArrays>,
 }
 
 fn reference() -> Reference {
@@ -61,18 +55,12 @@ fn reference() -> Reference {
     let text = std::fs::read_to_string(path).expect("the vectors are in the repository");
     let vectors: Vectors = serde_json::from_str(&text).expect("the vectors are of this crate's view");
     let features = Features::from_rows(vectors.cards.iter().copied());
-    let decks = vectors
-        .decks
-        .iter()
-        .map(|(name, codes)| (name.clone(), DeckArrays::new(codes, &features).expect("a deck list has cards")))
-        .collect();
-    Reference { vectors, features, decks }
+    Reference { vectors, features }
 }
 
 impl Reference {
-    fn packed(&self, decision: &Decision, view: &View) -> Packed {
-        pack(view, &self.decks[&decision.own], &self.decks[&decision.other], &self.features)
-            .expect("a decision of the vectors has answers")
+    fn packed(&self, view: &View) -> Packed {
+        pack(view, &self.features).expect("a decision of the vectors has answers")
     }
 }
 
@@ -81,7 +69,7 @@ fn every_decision_gives_the_arrays_of_the_reference() {
     let reference = reference();
     assert!(reference.vectors.decisions.len() > 100);
     for (index, decision) in reference.vectors.decisions.iter().enumerate() {
-        let packed = reference.packed(decision, &decision.view);
+        let packed = reference.packed(&decision.view);
         let ours: Vec<Told> = packed.arrays.iter().map(|(name, array)| told(name, array)).collect();
         for (mine, theirs) in ours.iter().zip(&decision.arrays) {
             assert_eq!(mine, theirs, "decision {index}");
@@ -94,7 +82,7 @@ fn every_decision_gives_the_arrays_of_the_reference() {
 fn the_decisions_together_give_the_batch_of_the_reference() {
     let reference = reference();
     let packed: Vec<Packed> =
-        reference.vectors.decisions.iter().map(|decision| reference.packed(decision, &decision.view)).collect();
+        reference.vectors.decisions.iter().map(|decision| reference.packed(&decision.view)).collect();
     let together = batch(&packed.iter().collect::<Vec<_>>()).expect("the decisions make a batch");
     let ours: Vec<Told> = together.arrays.iter().map(|(name, array)| told(name, array)).collect();
     for (mine, theirs) in ours.iter().zip(&reference.vectors.batch) {
@@ -110,7 +98,7 @@ fn the_comparison_sees_a_difference() {
     let decision = &reference.vectors.decisions[0];
     let mut later = decision.view.clone();
     later.turn += 1;
-    let packed = reference.packed(decision, &later);
+    let packed = reference.packed(&later);
     let differing: Vec<&str> = packed
         .arrays
         .iter()
